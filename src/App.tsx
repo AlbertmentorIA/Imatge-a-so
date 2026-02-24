@@ -158,53 +158,28 @@ export default function App() {
 
       setLastText(extractedText);
 
-      // 3. TTS
-      let base64Audio = null;
-
-      // Si és català i tenim ElevenLabs configurat (ho intentem via backend)
-      if (selectedLang === 'ca') {
-        try {
-          const response = await fetch('/api/tts/elevenlabs', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: extractedText, languageCode: selectedLang })
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            base64Audio = data.audioData;
-          }
-        } catch (e) {
-          console.warn("ElevenLabs fallit, usant Gemini com a fallback:", e);
-        }
-      }
-
-      // Si ElevenLabs no s'ha usat o ha fallat, usem Gemini TTS
-      if (!base64Audio) {
-        const ttsResponse = await genAI.models.generateContent({
-          model: "gemini-2.5-flash-preview-tts",
-          contents: [{ parts: [{ text: extractedText }] }],
-          config: {
-            responseModalities: [Modality.AUDIO],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: langConfig.voice },
-              },
+      // 3. TTS amb Gemini
+      const ttsResponse = await genAI.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ parts: [{ text: extractedText }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: langConfig.voice },
             },
           },
-        });
-        base64Audio = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        
-        if (base64Audio) {
-          setAudioData(base64Audio);
-          await playPCMAudio(base64Audio);
-        } else {
-          speakStatus(extractedText);
-        }
-      } else {
-        // Reproduir MP3 d'ElevenLabs
+        },
+      });
+
+      const base64Audio = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      
+      if (base64Audio) {
         setAudioData(base64Audio);
-        playMP3Audio(base64Audio);
+        await playPCMAudio(base64Audio);
+      } else {
+        // Fallback immediat si no hi ha dades d'àudio de la IA
+        speakStatus(extractedText);
       }
 
     } catch (err) {
@@ -222,25 +197,9 @@ export default function App() {
     if (file) processImage(file);
   };
 
-  // Funció per reproduir àudio MP3 (ElevenLabs)
-  const playMP3Audio = (base64Data: string) => {
-    const audio = new Audio(`data:audio/mp3;base64,${base64Data}`);
-    audio.play().catch(e => {
-      console.error("Error reproduint MP3:", e);
-      if (lastText) speakStatus(lastText);
-    });
-  };
-
   const replayAudio = () => {
     if (audioData) {
-      // Intentem detectar si és PCM o MP3 (heurística simple: ElevenLabs sol ser més llarg o Gemini PCM té capçalera específica si fos wav, però aquí és raw)
-      // Per simplicitat, si ElevenLabs ha tingut èxit, guardem un flag o intentem amb el mètode que toqui.
-      // Millor: guardem el tipus d'àudio.
-      if (selectedLang === 'ca' && audioData.length > 1000) { // ElevenLabs MP3 sol ser més dens
-         playMP3Audio(audioData);
-      } else {
-         playPCMAudio(audioData);
-      }
+      playPCMAudio(audioData);
     } else if (lastText) {
       speakStatus(lastText);
     }
