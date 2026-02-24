@@ -1,0 +1,7 @@
+{
+  "name": "Lector Accessible",
+  "description": "Una aplicació senzilla per llegir text d'imatges en veu alta per a persones amb dificultats visuals.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
