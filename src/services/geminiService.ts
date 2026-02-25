@@ -1,7 +1,7 @@
 import { GoogleGenAI, Modality, ThinkingLevel } from "@google/genai";
 
 // Inicialització de l'API de Gemini
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+const genAI = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
 
 export interface OCRResult {
   text: string;
