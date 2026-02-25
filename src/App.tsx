@@ -115,18 +115,51 @@ export default function App() {
     setAudioData(null);
 
     try {
-      // 1. Convertir imatge a base64
-      const base64Data = await new Promise<string>((resolve) => {
+      // 1. Redimensionar i comprimir la imatge al client per reduir latència de pujada
+      const optimizedImageData = await new Promise<{base64: string, mimeType: string}>((resolve, reject) => {
         const reader = new FileReader();
-        reader.onloadend = () => {
-          const base64 = (reader.result as string).split(',')[1];
-          resolve(base64);
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 1280; // Mida suficient per a OCR de qualitat
+            const MAX_HEIGHT = 1280;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+              if (width > MAX_WIDTH) {
+                height *= MAX_WIDTH / width;
+                width = MAX_WIDTH;
+              }
+            } else {
+              if (height > MAX_HEIGHT) {
+                width *= MAX_HEIGHT / height;
+                height = MAX_HEIGHT;
+              }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return reject("No s'ha pogut crear el context del canvas");
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            // Exportem com a JPEG amb qualitat mitjana-alta per estalviar espai
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            resolve({
+              base64: dataUrl.split(',')[1],
+              mimeType: 'image/jpeg'
+            });
+          };
+          img.src = e.target?.result as string;
         };
+        reader.onerror = reject;
         reader.readAsDataURL(file);
       });
 
       // 2. OCR via GeminiService
-      const ocrResult = await GeminiService.extractText(base64Data, file.type, langConfig.prompt);
+      const ocrResult = await GeminiService.extractText(optimizedImageData.base64, optimizedImageData.mimeType, langConfig.prompt);
 
       if (ocrResult.error || !ocrResult.text) {
         setError(langConfig.errorMsg);

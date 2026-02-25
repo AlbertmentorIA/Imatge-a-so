@@ -1,7 +1,7 @@
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI, Modality, ThinkingLevel } from "@google/genai";
 
 // Inicialització de l'API de Gemini
-const genAI = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
+const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
 export interface OCRResult {
   text: string;
@@ -27,7 +27,10 @@ export const GeminiService = {
               { text: `Extract all text from this image. The text is likely in ${langPrompt}. If no text is found, respond only with 'NO_TEXT_FOUND'. Return only the extracted text without any comments.` }
             ]
           }
-        ]
+        ],
+        config: {
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
+        }
       });
 
       const text = result.text?.trim() || "";
