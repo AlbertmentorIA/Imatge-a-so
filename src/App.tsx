@@ -3,13 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenAI, Modality } from "@google/genai";
+import React, { useState, useRef } from 'react';
 import { Camera, Image as ImageIcon, Volume2, Loader2, AlertCircle, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-
-// Inicialització de l'API de Gemini
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+import { GeminiService } from './services/geminiService';
 
 type Language = {
   code: string;
@@ -69,11 +66,10 @@ export default function App() {
 
   // Funció per parlar missatges d'error o estat usant Web Speech API
   const speakStatus = (text: string) => {
-    // Cancelem qualsevol parla prèvia
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = langConfig.code;
-    utterance.rate = 0.9; // Una mica més lent per a millor claredat
+    utterance.rate = 0.9;
     window.speechSynthesis.speak(utterance);
   };
 
@@ -85,7 +81,6 @@ export default function App() {
       }
       const ctx = audioContextRef.current;
       
-      // Convertir base64 a ArrayBuffer
       const binaryString = window.atob(base64Data);
       const len = binaryString.length;
       const bytes = new Uint8Array(len);
@@ -93,11 +88,9 @@ export default function App() {
         bytes[i] = binaryString.charCodeAt(i);
       }
       
-      // Gemini TTS retorna PCM de 16 bits (Int16)
       const int16Data = new Int16Array(bytes.buffer);
       const float32Data = new Float32Array(int16Data.length);
       
-      // Normalitzar a Float32 (-1.0 a 1.0)
       for (let i = 0; i < int16Data.length; i++) {
         float32Data[i] = int16Data[i] / 32768.0;
       }
@@ -111,7 +104,6 @@ export default function App() {
       source.start();
     } catch (err) {
       console.error("Error reproduint PCM:", err);
-      // Si falla el PCM, usem el fallback de síntesi de veu del navegador
       if (lastText) speakStatus(lastText);
     }
   };
@@ -133,53 +125,26 @@ export default function App() {
         reader.readAsDataURL(file);
       });
 
-      // 2. OCR amb Gemini
-      const model = "gemini-3-flash-preview";
-      const result = await genAI.models.generateContent({
-        model: model,
-        contents: [
-          {
-            parts: [
-              { inlineData: { data: base64Data, mimeType: file.type } },
-              { text: `Extract all text from this image. The text is likely in ${langConfig.prompt}. If no text is found, respond only with 'NO_TEXT_FOUND'. Return only the extracted text without any comments.` }
-            ]
-          }
-        ]
-      });
+      // 2. OCR via GeminiService
+      const ocrResult = await GeminiService.extractText(base64Data, file.type, langConfig.prompt);
 
-      const extractedText = result.text?.trim() || "";
-
-      if (extractedText === "NO_TEXT_FOUND" || !extractedText) {
+      if (ocrResult.error || !ocrResult.text) {
         setError(langConfig.errorMsg);
         speakStatus(langConfig.errorMsg);
         setIsProcessing(false);
         return;
       }
 
-      setLastText(extractedText);
+      setLastText(ocrResult.text);
 
-      // 3. TTS amb Gemini
-      const ttsResponse = await genAI.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: extractedText }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: langConfig.voice },
-            },
-          },
-        },
-      });
-
-      const base64Audio = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      // 3. TTS via GeminiService
+      const base64Audio = await GeminiService.generateSpeech(ocrResult.text, langConfig.voice);
       
       if (base64Audio) {
         setAudioData(base64Audio);
         await playPCMAudio(base64Audio);
       } else {
-        // Fallback immediat si no hi ha dades d'àudio de la IA
-        speakStatus(extractedText);
+        speakStatus(ocrResult.text);
       }
 
     } catch (err) {
